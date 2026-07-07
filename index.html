@@ -707,27 +707,37 @@ function apiGet(action, params) {
       qp.append('facility_id', 'eq.' + fid);
       qp.append('record_date', 'gte.' + dateFrom);
       qp.append('record_date', 'lte.' + dateTo);
-      qp.append('select', '*,users(name),facilities(closing_time)');
+      qp.append('select', '*');
       qp.append('order', 'record_date.asc,record_time.desc');
       var url = SUPABASE_URL + '/rest/v1/records?' + qp.toString();
-      return fetch(url, { headers: sbHeaders() })
-        .then(function(r) { return r.json(); })
-        .then(function(rows) {
-          var filtered = (rows || []).filter(function(r) {
-            return r.record_date >= dateFrom && r.record_date <= dateTo;
-          }).map(function(r) {
-            return Object.assign({}, r, {
-              user_name:    r.users      ? r.users.name             : '',
-              closing_time: r.facilities ? r.facilities.closing_time : '19:30:00'
-            });
+      // records・users・facilities を別々に取得し、JS側で結合する
+      // （records と users/facilities の間にDB側の外部キー関係が
+      //   設定されていなくても動くようにするため、embed構文は使わない）
+      return Promise.all([
+        fetch(url, { headers: sbHeaders() }).then(function(r) { return r.json(); }),
+        sbGet('users', { select: 'id,name' }),
+        sbGet('facilities', { select: 'id,closing_time' })
+      ]).then(function(results) {
+        var rows         = results[0] || [];
+        var userRows     = results[1] || [];
+        var facilityRows = results[2] || [];
+        var filtered = rows.filter(function(r) {
+          return r.record_date >= dateFrom && r.record_date <= dateTo;
+        }).map(function(r) {
+          var u = userRows.find(function(x) { return x.id === r.user_id; });
+          var f = facilityRows.find(function(x) { return x.id === r.facility_id; });
+          return Object.assign({}, r, {
+            user_name:    u ? u.name         : '',
+            closing_time: f ? f.closing_time : '19:30:00'
           });
-          var daily = {};
-          filtered.forEach(function(r) {
-            var day = parseInt(r.record_date.slice(8, 10));
-            if (!daily[day] || r.record_time > daily[day].record_time) daily[day] = r;
-          });
-          return { records: daily, all_records: filtered };
         });
+        var daily = {};
+        filtered.forEach(function(r) {
+          var day = parseInt(r.record_date.slice(8, 10));
+          if (!daily[day] || r.record_time > daily[day].record_time) daily[day] = r;
+        });
+        return { records: daily, all_records: filtered };
+      });
     }
 
     case 'get_confirmation': {
@@ -945,11 +955,16 @@ function loadRecords() {
     var trO = document.createElement('tr');
     trO.innerHTML = '<td colspan="2" style="text-align:right;font-weight:700;">超過回数</td><td style="font-weight:700;color:var(--danger);">' + overtimeCnt + '回</td><td colspan="2"></td>';
     tbody.appendChild(trO);
+  }).catch(function(err) {
+    console.error('records読み込みエラー:', err);
+    showToast('記録の読み込みに失敗しました: ' + (err && err.message ? err.message : err), true);
   });
 
   apiGet('get_confirmation', { facility_id: fid, year: currentYear, month: currentMonth }).then(function(conf) {
     document.getElementById('confirmed-date').value = conf && conf.confirmed_date ? conf.confirmed_date : '';
     document.getElementById('confirmed-by').value   = conf && conf.confirmed_by   ? conf.confirmed_by   : '';
+  }).catch(function(err) {
+    console.error('confirmation読み込みエラー:', err);
   });
 }
 function saveConfirmation() {
