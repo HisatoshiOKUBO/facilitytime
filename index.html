@@ -1056,7 +1056,7 @@ function exportPDF() {
   }
 
   var html = '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">' +
-    '<title>施設利用時間報告書 ' + currentYear + '年' + currentMonth + '月</title>' +
+    '<title>施設利用時間報告書 ' + escHtml(f.name) + ' ' + currentYear + '年' + currentMonth + '月</title>' +
     '<style>' +
     '@media print{body{margin:0}.no-print{display:none!important}@page{size:A4;margin:10mm}}' +
     'body{font-family:"MS Gothic","Meiryo",monospace;font-size:11px;padding:15px;background:#fff;color:#000}' +
